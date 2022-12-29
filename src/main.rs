@@ -31,7 +31,7 @@ fn heuristic_score(v: &Vertex, goal: &Vertex) -> i32 {
     (v.x - goal.x).abs() + (v.y - goal.y).abs()
 }
 
-fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) {
+fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) -> i32 {
 
     let mut Q: VecDeque<Vertex> = VecDeque::new();
     let mut g_score: HashMap<u64, i32> = HashMap::new();
@@ -74,7 +74,8 @@ fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) {
                 println!("vertex {:?}", v);
             }
 
-            println!("path length {}", path.len());
+            println!("path length {}", path.len() - 1);
+            return path.len() as i32 - 1;
         }
 
         Q.retain(|v| v.calculate_hash() != min_v.calculate_hash());
@@ -94,6 +95,8 @@ fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) {
             }
         }
     }
+
+    return std::i32::MAX;
 }
 
 fn main() {
@@ -110,6 +113,8 @@ fn main() {
 
     let mut start_o: Option<Vertex> = None;
     let mut goal_o: Option<Vertex> = None;
+
+    let mut all_starts = Vec::new();
 
     let reader = BufReader::new(File::open("input.txt").unwrap());
 
@@ -144,6 +149,10 @@ fn main() {
 
         println!("looking for neighbours on {:?}", v);
         graph.adjacencies.insert(*hash, Vec::new());
+
+        if v.height == 'a' {
+            all_starts.push(v.clone());
+        }
 
         // Right
         if v.x > 0 {
@@ -183,5 +192,15 @@ fn main() {
         }
     }
 
-    a_star(&mut graph, &start_o.unwrap(), &goal_o.unwrap());
+    let mut shortest_path = std::i32::MAX;
+    let goal = goal_o.unwrap();
+
+    for s in all_starts {
+        let attempt =  a_star(&mut graph, &s, &goal);
+        if attempt < shortest_path {
+            shortest_path = attempt;
+        }
+    }
+
+    println!("ultimatle shortest path {}", shortest_path);
 }
