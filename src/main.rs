@@ -1,125 +1,187 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::vec_deque::VecDeque;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::hash::{Hash, Hasher};
+use std::io::{BufReader, BufRead};
 
-
-struct Monkey {
-    inventory: VecDeque<Item>,
-    worry_function: fn(x: i32)->i32,
-    test: fn(x: i32)->bool,
-    action_positive: usize,
-    action_negative: usize,
-    activity: i32
+struct Graph {
+    vertices: HashMap<u64, Vertex>,
+    adjacencies: HashMap<u64, Vec<u64>>,
 }
 
-struct Item {
-    worry_level: i32,
+#[derive(Clone, Debug, Hash)]
+struct Vertex {
+    x: i32,
+    y: i32,
+    height: char
 }
 
-impl Monkey{
+impl Vertex {
 
-    fn mess_around(&mut self)  -> (usize, Item) {
-        let mut item = self.inventory.pop_front().unwrap();
-        item.worry_level = (self.worry_function)(item.worry_level);
-        item.worry_level = item.worry_level / 3;
+    fn calculate_hash(&self) -> u64 {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        s.finish()
+    }
+}
 
-        self.activity += 1;
+fn heuristic_score(v: &Vertex, goal: &Vertex) -> i32 {
 
-        if (self.test)(item.worry_level) {
-            (self.action_positive, item)
-        } else{
-            (self.action_negative, item)
-        }
+    (v.x - goal.x).abs() + (v.y - goal.y).abs()
+}
+
+fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) {
+
+    let mut Q: VecDeque<Vertex> = VecDeque::new();
+    let mut g_score: HashMap<u64, i32> = HashMap::new();
+    let mut f_score: HashMap<u64, i32> = HashMap::new();
+    let mut previous: HashMap<u64, Option<u64>> = HashMap::new();
+
+    for (h, _) in graph.vertices.iter() {
+        g_score.insert(*h, std::i32::MAX);
+        f_score.insert(*h, std::i32::MAX);
+        previous.insert(*h, Option::None);
     }
 
-    fn to_string(&self) -> String {
-        let mut res = "Inventory: ".to_string();
+    g_score.insert(start.calculate_hash(), 0);
+    f_score.insert(start.calculate_hash(), heuristic_score(start, target));
+    Q.push_front(start.clone());
 
-        for i in self.inventory.iter() {
-            res.push_str(format!("{},", i.worry_level).as_str());
+    while !Q.is_empty() {
+
+        let min_v = Q.iter().min_by(|v1, v2| f_score[&v1.calculate_hash()].cmp(&f_score[&v2.calculate_hash()])).unwrap().clone();
+
+        println!("min_v {:?} hash {}, target {:?} {}", min_v, min_v.calculate_hash(), target, target.calculate_hash());
+        println!("neighbours {}, Q len {}", graph.adjacencies.get(&min_v.calculate_hash()).unwrap().len(), Q.iter().len());
+
+        if min_v.calculate_hash() == target.calculate_hash() {
+
+            println!("found path");
+            let mut path: Vec<Vertex> = vec![];
+
+            path.push(target.clone());
+            let mut prev = &graph.vertices[&previous[&target.calculate_hash()].unwrap()];
+
+            while prev.calculate_hash() != start.calculate_hash() {
+                path.push(graph.vertices[&prev.calculate_hash()].clone());
+                prev = &graph.vertices[&previous[&prev.calculate_hash()].unwrap()];
+            }
+
+            path.push(start.clone());
+
+            for v in path.iter().rev() {
+                println!("vertex {:?}", v);
+            }
+
+            println!("path length {}", path.len());
         }
 
-        res
+        Q.retain(|v| v.calculate_hash() != min_v.calculate_hash());
+
+        for neighbour in graph.adjacencies[&min_v.calculate_hash()].iter().map(|hash| &graph.vertices[hash]) {
+
+            let tentative = g_score[&min_v.calculate_hash()] + 1;
+
+            if tentative < g_score[&neighbour.calculate_hash()] {
+                previous.insert(neighbour.calculate_hash(), Option::Some(min_v.calculate_hash()));
+                g_score.insert(neighbour.calculate_hash(), tentative);
+                f_score.insert(neighbour.calculate_hash(), tentative + heuristic_score(&neighbour, target));
+
+                if !Q.iter().any(|v| v.calculate_hash() == neighbour.calculate_hash()) {
+                    Q.push_back(neighbour.clone());
+                }
+            }
+        }
     }
 }
 
 fn main() {
 
-    let mut monkeys: Vec<Monkey> = vec![];
+    let reader = BufReader::new(File::open("input.txt").unwrap());
 
-    monkeys.push(Monkey{
-        inventory: VecDeque::from([Item{worry_level: 79}, Item{worry_level: 98}]),
-        worry_function: |w| w * 19,
-        test: |w| w % 23 == 0,
-        action_positive: 2,
-        action_negative: 3,
-        activity: 0
-    });
+    let mut graph: Graph = Graph {
+        vertices: HashMap::new(),
+        adjacencies: HashMap::new(),
+    };
 
-    monkeys.push(Monkey{
-        inventory: VecDeque::from([
-            Item{worry_level: 54}, Item{worry_level: 65}, Item{worry_level:75}, Item{worry_level:74}]),
-        worry_function: |w| w + 6,
-        test: |w| w % 19 == 0,
-        action_positive: 2,
-        action_negative: 0,
-        activity: 0
-    });
+    let max_x = reader.lines().nth(0).unwrap().unwrap().len() as i32;
+    let mut max_y = 0;
 
-    monkeys.push(Monkey{
-        inventory: VecDeque::from([
-            Item{worry_level:79}, Item{worry_level:60}, Item{worry_level:97}
-        ]),
-        worry_function: |w| w * w,
-        test: |w| w % 13 == 0,
-        action_positive: 1,
-        action_negative: 3,
-        activity: 0
-    });
+    let mut start_o: Option<Vertex> = None;
+    let mut goal_o: Option<Vertex> = None;
 
-    monkeys.push(Monkey{
-        inventory: VecDeque::from([Item{worry_level: 74}]),
-        worry_function: |w| w + 3,
-        test: |w| w % 17 == 0,
-        action_positive: 0,
-        action_negative: 1,
-        activity: 0
-    });
+    let reader = BufReader::new(File::open("input.txt").unwrap());
 
-    let rounds = 20;
+    for (y, line) in reader.lines().map(|l| l.unwrap()).enumerate() {
 
-    for round in 0..rounds {
+    max_y += 1;
 
-        for monkey_index in 0..monkeys.len() {
+        for (x, c) in line.chars().enumerate() {
 
-            let monkey = &mut monkeys[monkey_index];
+            let mut height = c;
 
-            let mut cache = VecDeque::new();
-
-            while !(monkey).inventory.is_empty() {
-                let (throw_to, item) = monkey.mess_around();
-
-                println!("Monkey {} throws item with worry level {} to monkey {}", monkey_index, item.worry_level, throw_to);
-
-                cache.push_front((throw_to, item));
+            if height == 'S' {
+                height = 'a';
+                let v = Vertex { x:x as i32, y: y as i32, height: height};
+                start_o = Option::Some(v.clone());
+                graph.vertices.insert(v.calculate_hash(), v);
+            } else if height == 'E' {
+                height = 'z';
+                let v = Vertex { x:x as i32, y: y as i32, height: height};
+                goal_o = Option::Some(v.clone());
+                graph.vertices.insert(v.calculate_hash(), v);
+            } else{
+                let v = Vertex { x:x as i32, y: y as i32, height: height};
+                graph.vertices.insert(v.calculate_hash(), v);
             }
-
-            while !cache.is_empty(){
-                let (throw_to, item) = cache.pop_back().unwrap();
-                (&mut monkeys[throw_to]).inventory.push_back(item);
-            }
-
-        }
-
-        println!("after round {}", round);
-
-        for (i, m) in monkeys.iter().enumerate() {
-            println!("Monkey {}: {}", i, m.to_string());
         }
     }
 
-    monkeys.sort_by(|a, b| a.activity.cmp(&b.activity));
+    println!("max_x {}, max_y {}", max_x, max_y);
 
-    println!("selected monkey activity: 1st {} 2nd {} 3rd {} 4th {} total {}",
-             monkeys[0].activity, monkeys[1].activity, monkeys[2].activity, monkeys[3].activity, monkeys[2].activity * monkeys[3].activity);
+    for (hash, v) in graph.vertices.iter() {
+
+        println!("looking for neighbours on {:?}", v);
+        graph.adjacencies.insert(*hash, Vec::new());
+
+        // Right
+        if v.x > 0 {
+            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
+                |(_h, other_v)| other_v.x == v.x - 1 && other_v.y == v.y && *_h != hash
+                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
+                println!("found neighbour for {:?}, {:?}", v, neighbour);
+                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
+            }
+        }
+        // Left
+        if v.x < max_x - 1 {
+            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
+                |(_h, other_v)| other_v.x == v.x + 1 && other_v.y == v.y && *_h != hash
+                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
+                println!("found neighbour for {:?}, {:?}", v, neighbour);
+                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
+            }
+        }
+        // Up
+        if v.y > 0 {
+            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
+                |(_h, other_v)| other_v.y == v.y - 1 && other_v.x == v.x && *_h != hash
+                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
+                println!("found neighbour for {:?}, {:?}", v, neighbour);
+                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
+            }
+        }
+        // Down
+        if v.y < max_y - 1 {
+            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
+                |(_h, other_v)| other_v.y == v.y + 1 && other_v.x == v.x && *_h != hash
+                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
+                println!("found neighbour for {:?}, {:?}", v, neighbour);
+                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
+            }
+        }
+    }
+
+    a_star(&mut graph, &start_o.unwrap(), &goal_o.unwrap());
 }
