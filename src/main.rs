@@ -1,103 +1,98 @@
-use std::collections::{HashMap};
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::vec_deque::VecDeque;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{BufReader, BufRead};
+use std::{thread, time};
 
 struct Graph {
     vertices: HashMap<u64, Vertex>,
     adjacencies: HashMap<u64, Vec<u64>>,
 }
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug)]
 struct Vertex {
-    x: i32,
-    y: i32,
-    height: char
+    id : String,
+    pressure: i32
 }
 
-impl Vertex {
+struct Path {
+    from: u64,
+    to: u64,
+    len: usize,
+    pressure: i32,
+    vertices :Vec<u64>
+}
 
-    fn calculate_hash(&self) -> u64 {
-        let mut s = DefaultHasher::new();
-        self.hash(&mut s);
-        s.finish()
+impl Hash for Vertex {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 
-fn heuristic_score(v: &Vertex, goal: &Vertex) -> i32 {
-
-    (v.x - goal.x).abs() + (v.y - goal.y).abs()
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
 
-fn a_star(graph: &mut Graph, start: &Vertex, target: &Vertex) -> i32 {
+fn calculate_shortest_path(graph: &Graph, start: u64, end: u64) -> Vec<u64> {
 
-    let mut Q: VecDeque<Vertex> = VecDeque::new();
-    let mut g_score: HashMap<u64, i32> = HashMap::new();
-    let mut f_score: HashMap<u64, i32> = HashMap::new();
-    let mut previous: HashMap<u64, Option<u64>> = HashMap::new();
+    let mut dist: HashMap<u64, usize> = HashMap::new();
+    let mut prev: HashMap<u64, u64> = HashMap::new();
+    let mut Q: HashSet<u64> = HashSet::new();
 
-    for (h, _) in graph.vertices.iter() {
-        g_score.insert(*h, std::i32::MAX);
-        f_score.insert(*h, std::i32::MAX);
-        previous.insert(*h, Option::None);
+    for (h, v) in graph.vertices.iter(){
+        dist.insert(*h, usize::MAX);
+        Q.insert(*h);
     }
 
-    g_score.insert(start.calculate_hash(), 0);
-    f_score.insert(start.calculate_hash(), heuristic_score(start, target));
-    Q.push_front(start.clone());
+    dist.insert(start, 0);
 
     while !Q.is_empty() {
 
-        let min_v = Q.iter().min_by(|v1, v2| f_score[&v1.calculate_hash()].cmp(&f_score[&v2.calculate_hash()])).unwrap().clone();
+        let u = *Q.iter().min_by(|&h1, &h2| dist[h1].cmp(&dist[h2])).unwrap();
 
-        println!("min_v {:?} hash {}, target {:?} {}", min_v, min_v.calculate_hash(), target, target.calculate_hash());
-        println!("neighbours {}, Q len {}", graph.adjacencies.get(&min_v.calculate_hash()).unwrap().len(), Q.iter().len());
+        if u == end {
 
-        if min_v.calculate_hash() == target.calculate_hash() {
+            let mut path: Vec<u64> = Vec::new();
+            let mut current = end;
 
-            println!("found path");
-            let mut path: Vec<Vertex> = vec![];
-
-            path.push(target.clone());
-            let mut prev = &graph.vertices[&previous[&target.calculate_hash()].unwrap()];
-
-            while prev.calculate_hash() != start.calculate_hash() {
-                path.push(graph.vertices[&prev.calculate_hash()].clone());
-                prev = &graph.vertices[&previous[&prev.calculate_hash()].unwrap()];
+            while current != start {
+                path.push(current);
+                current = prev[&current];
             }
 
-            path.push(start.clone());
-
-            for v in path.iter().rev() {
-                println!("vertex {:?}", v);
-            }
-
-            println!("path length {}", path.len() - 1);
-            return path.len() as i32 - 1;
+            return path;
         }
 
-        Q.retain(|v| v.calculate_hash() != min_v.calculate_hash());
+        Q.remove(&u);
 
-        for neighbour in graph.adjacencies[&min_v.calculate_hash()].iter().map(|hash| &graph.vertices[hash]) {
+        for neighbour in graph.adjacencies[&u].iter().filter(|h| Q.contains(h)) {
+            let alt = dist[&u] + 1;
 
-            let tentative = g_score[&min_v.calculate_hash()] + 1;
-
-            if tentative < g_score[&neighbour.calculate_hash()] {
-                previous.insert(neighbour.calculate_hash(), Option::Some(min_v.calculate_hash()));
-                g_score.insert(neighbour.calculate_hash(), tentative);
-                f_score.insert(neighbour.calculate_hash(), tentative + heuristic_score(&neighbour, target));
-
-                if !Q.iter().any(|v| v.calculate_hash() == neighbour.calculate_hash()) {
-                    Q.push_back(neighbour.clone());
-                }
+            if alt < dist[neighbour] {
+                dist.insert(*neighbour, alt);
+                prev.insert(*neighbour, u);
             }
         }
     }
 
-    return std::i32::MAX;
+    return vec![];
 }
+
+fn simulate(graph: &Graph, loosePumps: Vec<u64>, mut paths: HashMap<u64, Vec<(u64, Path)>>) {
+
+    let mut time = 0;
+
+    for (from_h, p) in paths.iter_mut() {
+        p.sort_by();
+    }
+
+
+}
+
 
 fn main() {
 
@@ -108,99 +103,57 @@ fn main() {
         adjacencies: HashMap::new(),
     };
 
-    let max_x = reader.lines().nth(0).unwrap().unwrap().len() as i32;
-    let mut max_y = 0;
-
     let mut start_o: Option<Vertex> = None;
-    let mut goal_o: Option<Vertex> = None;
-
-    let mut all_starts = Vec::new();
 
     let reader = BufReader::new(File::open("input.txt").unwrap());
 
-    for (y, line) in reader.lines().map(|l| l.unwrap()).enumerate() {
+    for line in reader.lines().map(|l| l.unwrap()) {
 
-    max_y += 1;
+        let splits: Vec<&str> = line.split_whitespace().collect();
 
-        for (x, c) in line.chars().enumerate() {
+        let v = Vertex{id: splits[1].to_string(), pressure: *&splits[4][5..splits[4].len()-1].parse::<i32>().unwrap() };
+        graph.vertices.insert(calculate_hash(&v), v);
+    }
 
-            let mut height = c;
+    let reader = BufReader::new(File::open("input.txt").unwrap());
 
-            if height == 'S' {
-                height = 'a';
-                let v = Vertex { x:x as i32, y: y as i32, height: height};
-                start_o = Option::Some(v.clone());
-                graph.vertices.insert(v.calculate_hash(), v);
-            } else if height == 'E' {
-                height = 'z';
-                let v = Vertex { x:x as i32, y: y as i32, height: height};
-                goal_o = Option::Some(v.clone());
-                graph.vertices.insert(v.calculate_hash(), v);
-            } else{
-                let v = Vertex { x:x as i32, y: y as i32, height: height};
-                graph.vertices.insert(v.calculate_hash(), v);
-            }
+    for line in reader.lines().map(|l| l.unwrap()) {
+
+        let splits: Vec<&str> = line.split_whitespace().collect();
+        let mut hashes = Vec::new();
+
+        for connection in &splits[9..] {
+            hashes.push(calculate_hash(&connection.split(',').next().unwrap().to_string()));
+        }
+
+        graph.adjacencies.insert(
+            calculate_hash(&splits[1].to_string()),
+            hashes);
+    }
+
+    let mut loosePumps: Vec<u64> = Vec::new();
+
+    for (h, v) in graph.vertices.iter() {
+        if v.pressure > 0 {
+            loosePumps.push(*h);
         }
     }
 
-    println!("max_x {}, max_y {}", max_x, max_y);
+    let mut paths: HashMap<u64, Vec<(u64, Path)>> = HashMap::new();
 
-    for (hash, v) in graph.vertices.iter() {
+    for from in loosePumps.iter() {
 
-        println!("looking for neighbours on {:?}", v);
-        graph.adjacencies.insert(*hash, Vec::new());
-
-        if v.height == 'a' {
-            all_starts.push(v.clone());
-        }
-
-        // Right
-        if v.x > 0 {
-            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
-                |(_h, other_v)| other_v.x == v.x - 1 && other_v.y == v.y && *_h != hash
-                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
-                println!("found neighbour for {:?}, {:?}", v, neighbour);
-                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
+        let mut toPaths = Vec::new();
+        for to in loosePumps.iter() {
+            if from != to {
+                let p = Path{
+                    from:*from, to: *to, pressure: graph.vertices[to].pressure,
+                    vertices: calculate_shortest_path(&graph, *from, *to)
+                };
+                toPaths.push((*to, p));
             }
         }
-        // Left
-        if v.x < max_x - 1 {
-            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
-                |(_h, other_v)| other_v.x == v.x + 1 && other_v.y == v.y && *_h != hash
-                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
-                println!("found neighbour for {:?}, {:?}", v, neighbour);
-                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
-            }
-        }
-        // Up
-        if v.y > 0 {
-            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
-                |(_h, other_v)| other_v.y == v.y - 1 && other_v.x == v.x && *_h != hash
-                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
-                println!("found neighbour for {:?}, {:?}", v, neighbour);
-                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
-            }
-        }
-        // Down
-        if v.y < max_y - 1 {
-            if let Some((neighbour_hash, neighbour)) = graph.vertices.iter().find(
-                |(_h, other_v)| other_v.y == v.y + 1 && other_v.x == v.x && *_h != hash
-                    && ((other_v.height as u32) as i32 - (v.height as u32) as i32) < 2){
-                println!("found neighbour for {:?}, {:?}", v, neighbour);
-                graph.adjacencies.get_mut(&hash).unwrap().push(*neighbour_hash);
-            }
-        }
+
+        paths.insert(*from, toPaths);
     }
-
-    let mut shortest_path = std::i32::MAX;
-    let goal = goal_o.unwrap();
-
-    for s in all_starts {
-        let attempt =  a_star(&mut graph, &s, &goal);
-        if attempt < shortest_path {
-            shortest_path = attempt;
-        }
-    }
-
-    println!("ultimatle shortest path {}", shortest_path);
 }
