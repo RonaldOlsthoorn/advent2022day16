@@ -106,7 +106,8 @@ fn simulate(graph: &Graph, paths: &mut HashMap<u64, Vec<(u64, Path)>>, start_nod
     let mut q: VecDeque<(WalkState, WalkTransition)> = VecDeque::new();
     q.push_front((origin_state, WalkTransition{new_node: start_node_h, dist: 0}));
 
-    let mut results: Vec<(i32, Vec<u64>)> = Vec::new();
+    //let mut results: Vec<(i32, Vec<u64>)> = Vec::new();
+    let mut best_result: (i32, Vec<u64>) = (0, vec![]); 
 
 
     while !q.is_empty() {
@@ -124,9 +125,11 @@ fn simulate(graph: &Graph, paths: &mut HashMap<u64, Vec<(u64, Path)>>, start_nod
 
         if children.is_empty() {
             let end_result = current_state.pressure_released + (MAX_TIME - current_state.time) * current_state.pressure_open;
-            println!("Path: {:?}", current_state.path);
-            println!("found: {}", end_result);
-            results.push((end_result, current_state.path));
+
+            if end_result > best_result.0 {
+                best_result = (end_result, current_state.path.clone());
+                println!("Better result found {} Path: {:?}", end_result, current_state.path);
+            }
         } else {
             for c in children.iter() {
                 q.push_front((current_state.clone(), WalkTransition{ new_node: c.0, dist: c.1.dist }));
@@ -134,9 +137,7 @@ fn simulate(graph: &Graph, paths: &mut HashMap<u64, Vec<(u64, Path)>>, start_nod
         }
     }
 
-    results.sort_by(|a, b| a.0.cmp(&b.0));
-
-    println!("best_result: {} worst result: {}", results[0].0, results[results.len()-1].0);
+    println!("best_result: {} path: {:?}", best_result.0, best_result.1);
 
 }
 
@@ -175,7 +176,7 @@ fn main() {
 
     let mut start_o: Option<u64> = None;
 
-    let reader = BufReader::new(File::open("test_input.txt").unwrap());
+    let reader = BufReader::new(File::open("input.txt").unwrap());
 
     for line in reader.lines().map(|l| l.unwrap()) {
 
@@ -189,7 +190,7 @@ fn main() {
         graph.vertices.insert(calculate_hash(&v), v);
     }
 
-    let reader = BufReader::new(File::open("test_input.txt").unwrap());
+    let reader = BufReader::new(File::open("input.txt").unwrap());
 
     for line in reader.lines().map(|l| l.unwrap()) {
 
